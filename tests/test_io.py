@@ -80,12 +80,17 @@ def test_construct_dest_file_path(dummy_kwargs):
     dest_target_dir = Path("/dest")
     source_target_dir = Path("/project_dir/target")
     file_path = "/project_dir/target/subdir/file.txt"
-
+    context = dummy_kwargs["context"]
+    
     expected_path = "/dest/test_dag/test_run_id/test_task/1/target/subdir/file.txt"
-    assert (
-        _construct_dest_file_path(dest_target_dir, file_path, source_target_dir, DEFAULT_TARGET_PATH, **dummy_kwargs)
-        == expected_path
-    )
+    result = _construct_dest_file_path(
+            dest_target_dir,
+            file_path,
+            source_target_dir,
+            context = context,
+            source_subpath=DEFAULT_TARGET_PATH
+        )
+    assert result == expected_path
 
 
 def test_upload_artifacts_to_cloud_storage_no_remote_path():

@@ -106,6 +106,8 @@ from cosmos.operators.base import (
     DbtTestMixin,
 )
 
+from cosmos.io import _construct_dest_file_path
+
 AIRFLOW_VERSION = Version(airflow.__version__)
 
 logger = get_logger(__name__)
@@ -302,17 +304,20 @@ class AbstractDbtLocalBase(AbstractDbtBase):
 
         return _configured_target_path, remote_conn_id
 
-    def _construct_dest_file_path(
-        self, dest_target_dir: Path, file_path: str, source_compiled_dir: Path, resource_type: str
-    ) -> str:
-        """
-        Construct the destination path for the compiled SQL files to be uploaded to the remote store.
-        """
-        dest_target_dir_str = str(dest_target_dir).rstrip("/")
-        dag_task_group_identifier = self.extra_context["dbt_dag_task_group_identifier"]
-        rel_path = os.path.relpath(file_path, source_compiled_dir).lstrip("/")
+    # def _construct_dest_file_path(
+    #     self, dest_target_dir: Path,
+    #     file_path: str,
+    #     source_compiled_dir: Path,
+    #     resource_type: str
+    # ) -> str:
+    #     """
+    #     Construct the destination path for the compiled SQL files to be uploaded to the remote store.
+    #     """
+    #     dest_target_dir_str = str(dest_target_dir).rstrip("/")
+    #     dag_task_group_identifier = self.extra_context["dbt_dag_task_group_identifier"]
+    #     rel_path = os.path.relpath(file_path, source_compiled_dir).lstrip("/")
 
-        return f"{dest_target_dir_str}/{dag_task_group_identifier}/{resource_type}/{rel_path}"
+    #     return f"{dest_target_dir_str}/{dag_task_group_identifier}/{resource_type}/{rel_path}"
 
     def _upload_sql_files(self, tmp_project_dir: str, resource_type: str) -> None:
         start_time = time.time()
@@ -327,7 +332,13 @@ class AbstractDbtLocalBase(AbstractDbtBase):
         source_run_dir = Path(tmp_project_dir) / f"target/{resource_type}"
         files = [str(file) for file in source_run_dir.rglob("*") if file.is_file()]
         for file_path in files:
-            dest_file_path = self._construct_dest_file_path(dest_target_dir, file_path, source_run_dir, resource_type)
+            dest_file_path = _construct_dest_file_path(
+                dest_target_dir = dest_target_dir,
+                file_path = file_path,
+                source_target_dir = source_run_dir,
+                context = self.extra_context,
+                resource_type = resource_type,
+            )
             dest_object_storage_path = ObjectStoragePath(dest_file_path, conn_id=dest_conn_id)
             ObjectStoragePath(file_path).copy(dest_object_storage_path)
             self.log.debug("Copied %s to %s", file_path, dest_object_storage_path)
@@ -342,7 +353,13 @@ class AbstractDbtLocalBase(AbstractDbtBase):
         from airflow.io.path import ObjectStoragePath
 
         for file_path in files:
-            dest_file_path = self._construct_dest_file_path(dest_target_dir, file_path, source_run_dir, resource_type)  # type: ignore
+            dest_file_path = _construct_dest_file_path(
+                dest_target_dir = dest_target_dir,
+                file_path = file_path,
+                context = self.extra_context,
+                source_target_dir = source_run_dir,
+                resource_type = resource_type
+            )  # type: ignore
             dest_object_storage_path = ObjectStoragePath(dest_file_path, conn_id=dest_conn_id)
             dest_object_storage_path.unlink()
             self.log.debug("Deleted %s to %s", file_path, dest_object_storage_path)

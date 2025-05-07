@@ -170,25 +170,45 @@ def _construct_dest_file_path(
     dest_target_dir: Path,
     file_path: str,
     source_target_dir: Path,
-    source_subpath: str,
-    **kwargs: Any,
+    *,
+    context: dict[str, Any],
+    resource_type: str | None = None,
+    source_subpath: str | None = None,
 ) -> str:
     """
     Construct the destination path for the artifact files to be uploaded to the remote store.
     """
     dest_target_dir_str = str(dest_target_dir).rstrip("/")
 
-    context = kwargs["context"]
-    task_run_identifier = (
-        f"{context['dag'].dag_id}"
-        f"/{context['run_id']}"
-        f"/{context['task_instance'].task_id}"
-        f"/{context['task_instance']._try_number}"
-    )
+    path_identifier: str
+    if "dbt_dag_task_group_identifier" in context:
+        path_identifier = context["dbt_dag_task_group_identifier"]
+    elif "dag" in context and "run_id" in context and "task_instance" in context:
+        dag_id = context['dag'].dag_id
+        run_id = context['run_id']
+        task_id = context['task_instance'].task_id
+        try_number = str(context['task_instance']._try_number)
+        path_identifier = f"{dag_id}/{run_id}/{task_id}/{try_number}"
+    else:
+        raise ValueError(
+            "Context does not contain the required keys to construct the destination file path."
+            " Please provide a valid context."
+        )
+    
+    mid_segment : str | None
+    if resource_type is not None:
+        mid_segment = resource_type.strip("/")
+    elif source_subpath is not None:
+        mid_segment = source_subpath.strip("/")
+    else:
+        mid_segment = None
+    
     rel_path = os.path.relpath(file_path, source_target_dir).lstrip("/")
-
-    return f"{dest_target_dir_str}/{task_run_identifier}/{source_subpath}/{rel_path}"
-
+    
+    if mid_segment is not None:
+        return f"{dest_target_dir_str}/{path_identifier}/{mid_segment}/{rel_path}"
+    else:
+        return f"{dest_target_dir_str}/{path_identifier}/{rel_path}"
 
 def upload_to_cloud_storage(project_dir: str, source_subpath: str = DEFAULT_TARGET_PATH, **kwargs: Any) -> None:
     """
@@ -208,9 +228,15 @@ def upload_to_cloud_storage(project_dir: str, source_subpath: str = DEFAULT_TARG
 
     source_target_dir = Path(project_dir) / f"{source_subpath}"
     files = [str(file) for file in source_target_dir.rglob("*") if file.is_file()]
+    context = kwargs["context"]
+    
     for file_path in files:
         dest_file_path = _construct_dest_file_path(
-            dest_target_dir, file_path, source_target_dir, source_subpath, **kwargs
+            dest_target_dir = dest_target_dir,
+            file_path = file_path,
+            context = context,
+            source_target_dir = source_target_dir,
+            source_subpath = source_subpath,
         )
         dest_object_storage_path = ObjectStoragePath(dest_file_path, conn_id=dest_conn_id)
         ObjectStoragePath(file_path).copy(dest_object_storage_path)
